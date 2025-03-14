@@ -225,6 +225,7 @@ struct flagcxDeviceAdaptor ixcudaAdaptor {
       ixcudaAdaptorStreamCreate, ixcudaAdaptorStreamDestroy,
       ixcudaAdaptorStreamCopy, ixcudaAdaptorStreamFree,
       ixcudaAdaptorStreamSynchronize, ixcudaAdaptorStreamQuery,
+      NULL,NULL,
       // Kernel launch
       NULL, // flagcxResult_t (*launchKernel)(void *func, unsigned int block_x,
             // unsigned int block_y, unsigned int block_z, unsigned int grid_x,

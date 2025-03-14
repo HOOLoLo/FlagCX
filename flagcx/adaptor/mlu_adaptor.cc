@@ -153,6 +153,22 @@ flagcxResult_t mluAdaptorStreamQuery(flagcxStream_t stream) {
   return res;
 }
 
+flagcxResult_t mluAdaptorGetCurrentStream(flagcxStream_t* stream) {
+  (*stream) = NULL;
+  flagcxCalloc(stream, 1);
+  **stream = torch_mlu::getCurMLUStream();
+  return flagcxSuccess;
+}
+
+flagcxResult_t mluAdaptorSetStream(flagcxStream_t stream) {
+  if (stream != NULL) {
+    torch_mlu::setCurrentMLUStream(stream->base);
+    return flagcxSuccess;
+  } else {
+    return flagcxUnhandledDeviceError
+  }
+}
+
 flagcxResult_t mluAdaptorLaunchHostFunc(flagcxStream_t stream,
                                         void (*fn)(void *), void *args) {
   if (stream != NULL) {
@@ -161,37 +177,35 @@ flagcxResult_t mluAdaptorLaunchHostFunc(flagcxStream_t stream,
   return flagcxSuccess;
 }
 
-struct flagcxDeviceAdaptor mluAdaptor {
-  "MLU",
-      // Basic functions
-      mluAdaptorDeviceSynchronize, mluAdaptorDeviceMemcpy,
-      mluAdaptorDeviceMemset, mluAdaptorDeviceMalloc, mluAdaptorDeviceFree,
-      mluAdaptorSetDevice, mluAdaptorGetDevice, mluAdaptorGetDeviceCount,
-      mluAdaptorGetVendor,
-      // GDR functions
-      NULL, // flagcxResult_t (*memHandleInit)(int dev_id, void **memHandle);
-      NULL, // flagcxResult_t (*memHandleDestroy)(int dev, void *memHandle);
-      mluAdaptorGdrMemAlloc, mluAdaptorGdrMemFree,
-      NULL, // flagcxResult_t (*hostShareMemAlloc)(void **ptr, size_t size, void
-            // *memHandle);
-      NULL, // flagcxResult_t (*hostShareMemFree)(void *ptr, void *memHandle);
-      // Stream functions
-      mluAdaptorStreamCreate, mluAdaptorStreamDestroy,
-      mluAdaptorStreamCopy, mluAdaptorStreamFree, 
-      mluAdaptorStreamSynchronize, mluAdaptorStreamQuery,
-      // Kernel launch
-      NULL, // flagcxResult_t (*launchKernel)(void *func, unsigned int block_x,
-            // unsigned int block_y, unsigned int block_z, unsigned int grid_x,
-            // unsigned int grid_y, unsigned int grid_z, void **args, size_t
-            // share_mem, void *stream, void *memHandle);
-      NULL, // flagcxResult_t (*copyArgsInit)(void **args);
-      NULL, // flagcxResult_t (*copyArgsFree)(void *args);
-      // Others
-      NULL, // flagcxResult_t (*getDeviceProperties)(struct flagcxDevProps
-            // *props, int dev);
-      NULL, // flagcxResult_t (*getDevicePciBusId)(char *pciBusId, int len, int
-            // dev);
-      mluAdaptorLaunchHostFunc
-};
+struct flagcxDeviceAdaptor mluAdaptor{
+    "MLU",
+    // Basic functions
+    mluAdaptorDeviceSynchronize, mluAdaptorDeviceMemcpy, mluAdaptorDeviceMemset,
+    mluAdaptorDeviceMalloc, mluAdaptorDeviceFree, mluAdaptorSetDevice,
+    mluAdaptorGetDevice, mluAdaptorGetDeviceCount, mluAdaptorGetVendor,
+    // GDR functions
+    NULL,  // flagcxResult_t (*memHandleInit)(int dev_id, void **memHandle);
+    NULL,  // flagcxResult_t (*memHandleDestroy)(int dev, void *memHandle);
+    mluAdaptorGdrMemAlloc, mluAdaptorGdrMemFree,
+    NULL,  // flagcxResult_t (*hostShareMemAlloc)(void **ptr, size_t size, void
+           // *memHandle);
+    NULL,  // flagcxResult_t (*hostShareMemFree)(void *ptr, void *memHandle);
+    // Stream functions
+    mluAdaptorStreamCreate, mluAdaptorStreamDestroy, mluAdaptorStreamCopy,
+    mluAdaptorStreamFree, mluAdaptorStreamSynchronize, mluAdaptorStreamQuery,
+    mluAdaptorGetCurrentStream, mluAdaptorSetStream,
+        // Kernel launch
+        NULL,  // flagcxResult_t (*launchKernel)(void *func, unsigned int
+               // block_x, unsigned int block_y, unsigned int block_z, unsigned
+               // int grid_x, unsigned int grid_y, unsigned int grid_z, void
+               // **args, size_t share_mem, void *stream, void *memHandle);
+    NULL,      // flagcxResult_t (*copyArgsInit)(void **args);
+    NULL,      // flagcxResult_t (*copyArgsFree)(void *args);
+    // Others
+    NULL,  // flagcxResult_t (*getDeviceProperties)(struct flagcxDevProps
+           // *props, int dev);
+    NULL,  // flagcxResult_t (*getDevicePciBusId)(char *pciBusId, int len, int
+           // dev);
+    mluAdaptorLaunchHostFunc};
 
 #endif // USE_CAMBRICON_ADAPTOR

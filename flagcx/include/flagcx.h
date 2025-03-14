@@ -102,6 +102,8 @@ struct flagcxDeviceHandle {
   flagcxResult_t (*streamFree)(flagcxStream_t stream);
   flagcxResult_t (*streamSynchronize)(flagcxStream_t stream);
   flagcxResult_t (*streamQuery)(flagcxStream_t stream);
+  flagcxResult_t (*streamGetCurrent)(flagcxStream_t* stream);
+  flagcxResult_t (*streamSet)(flagcxStream_t stream);
 };
 typedef struct flagcxDeviceHandle *flagcxDeviceHandle_t;
 

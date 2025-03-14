@@ -63,6 +63,7 @@ static struct flagcxDeviceHandle globalDeviceHandle {
       deviceAdaptor->streamCreate, deviceAdaptor->streamDestroy,
       deviceAdaptor->streamCopy, deviceAdaptor->streamFree,
       deviceAdaptor->streamSynchronize, deviceAdaptor->streamQuery,
+      deviceAdaptor->streamGetCurrent, deviceAdaptor->streamSet,
 };
 
 flagcxResult_t flagcxEnsureCommReady(flagcxComm_t comm) {

@@ -8,6 +8,7 @@
 #include "comm.h"
 #include "alloc.h"
 #include "adaptor.h"
+#include "framework/core/MLUStream.h"
 #include <map>
 struct flagcxInnerComm {
     cnclComm_t base;

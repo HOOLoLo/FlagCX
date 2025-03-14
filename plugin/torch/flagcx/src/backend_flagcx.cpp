@@ -395,10 +395,14 @@ flagcxBackend::allgather(std::vector<std::vector<at::Tensor>> &outputTensors,
                                       handler_->comm, stream),
                       std::nullopt);
 
+    flagcxStream_t cur_stream;
+    handler_->devHandle->streamGetCurrent(&cur_stream);
+    handler_->devHandle->streamSet(stream);
     // Copy the flattened tensor back into a vector of tensors.
     for (const auto j : c10::irange(outputTensorsTmp.size())) {
       outputTensorsTmp[j].copy_(outputFlattened[j], true);
     }
+    handler_->devHandle->streamSet(cur_stream);
   }
 
   work->event_->record(stream, deviceId_);

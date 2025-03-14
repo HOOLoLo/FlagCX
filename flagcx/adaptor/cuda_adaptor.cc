@@ -223,7 +223,7 @@ struct flagcxDeviceAdaptor cudaAdaptor {
       // Stream functions
       cudaAdaptorStreamCreate, cudaAdaptorStreamDestroy, cudaAdaptorStreamCopy,
       cudaAdaptorStreamFree, cudaAdaptorStreamSynchronize,
-      cudaAdaptorStreamQuery,
+      cudaAdaptorStreamQuery, NULL, NULL,
       // Kernel launch
       NULL, // flagcxResult_t (*launchKernel)(void *func, unsigned int block_x,
             // unsigned int block_y, unsigned int block_z, unsigned int grid_x,

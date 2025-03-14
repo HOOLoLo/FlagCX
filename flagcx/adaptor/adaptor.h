@@ -135,6 +135,8 @@ struct flagcxDeviceAdaptor {
   flagcxResult_t (*streamFree)(flagcxStream_t stream);
   flagcxResult_t (*streamSynchronize)(flagcxStream_t stream);
   flagcxResult_t (*streamQuery)(flagcxStream_t stream);
+  flagcxResult_t (*streamGetCurrent)(flagcxStream_t* stream);
+  flagcxResult_t (*streamSet)(flagcxStream_t stream);
 
   // Kernel launch
   // TODO: verify if we do need these funcs, if so, figure out a way to
