@@ -387,13 +387,14 @@ flagcxBackend::allgather(std::vector<std::vector<at::Tensor>> &outputTensors,
                          const AllgatherOptions & /* unused */) {
   auto inputTensor = inputTensors.back();
   auto outputTensorsTmp = outputTensors.back();
+  auto device = inputTensor.device();
   auto flagcxDataType = getFlagcxDataType(inputTensor.scalar_type());
   auto stream = getStreamByIndex(0);
   auto work = c10::make_intrusive<flagcxWork>(OpType::ALLGATHER, stream,
                                               handler_->devHandle);
   check_device(inputTensor.device(), outputTensorsTmp[0].device());
-  initComm(inputTensor.device());
-  syncStream(inputTensor.device());
+  initComm(device);
+  syncStream(device);
 
   if (!check_same_size(outputTensorsTmp)) {
     throw std::runtime_error(
@@ -410,8 +411,11 @@ flagcxBackend::allgather(std::vector<std::vector<at::Tensor>> &outputTensors,
                       std::nullopt);
 
     // Copy the flattened tensor back into a vector of tensors.
-    for (const auto j : c10::irange(outputTensorsTmp.size())) {
-      outputTensorsTmp[j].copy_(outputFlattened[j], true);
+    {
+      flagcxStreamGuard guard(stream, device.index());
+      for (const auto j : c10::irange(outputTensorsTmp.size())) {
+        outputTensorsTmp[j].copy_(outputFlattened[j], true);
+      }
     }
   }
 
@@ -557,8 +561,11 @@ flagcxBackend::alltoall(std::vector<at::Tensor> &outputTensors,
   at::Tensor outputFlattened = newLikeFlat(outputTensors);
 
   // Copy the input tensors to the flattened tensor.
-  for (const auto j : c10::irange(inputTensors.size())) {
-    inputFlattened[j].copy_(inputTensors[j], true);
+  {
+    flagcxStreamGuard guard(stream, device.index());
+    for (const auto j : c10::irange(inputTensors.size())) {
+      inputFlattened[j].copy_(inputTensors[j], true);
+    }
   }
 
   C10D_FLAGCX_CHECK(flagcxAlltoAll(inputFlattened.data_ptr(),
@@ -567,8 +574,11 @@ flagcxBackend::alltoall(std::vector<at::Tensor> &outputTensors,
                     std::nullopt);
 
   // Copy the flattened tensor back into a vector of tensors.
-  for (const auto j : c10::irange(outputTensors.size())) {
-    outputTensors[j].copy_(outputFlattened[j], true);
+  {
+    flagcxStreamGuard guard(stream, device.index());
+    for (const auto j : c10::irange(outputTensors.size())) {
+      outputTensors[j].copy_(outputFlattened[j], true);
+    }
   }
 
   work->event_->record(stream, deviceId_);
@@ -642,12 +652,13 @@ flagcxBackend::gather(std::vector<std::vector<at::Tensor>> &outputTensors,
                       std::vector<at::Tensor> &inputTensors,
                       const GatherOptions &opts) {
   auto &inputTensor = inputTensors.back();
+  auto device = inputTensor.device();
   auto flagcxDataType = getFlagcxDataType(inputTensor.scalar_type());
   auto stream = getStreamByIndex(0);
   auto work = c10::make_intrusive<flagcxWork>(OpType::GATHER, stream,
                                               handler_->devHandle);
-  initComm(inputTensor.device());
-  syncStream(inputTensor.device());
+  initComm(device);
+  syncStream(device);
 
   auto root = opts.rootRank;
   std::vector<at::Tensor> outputTensorsTmp;
@@ -671,6 +682,7 @@ flagcxBackend::gather(std::vector<std::vector<at::Tensor>> &outputTensors,
 
   // Unflatten the flattened tensor back into a vector of tensors.
   if (rank_ == root) {
+    flagcxStreamGuard guard(stream, device.index());
     for (const auto j : c10::irange(outputTensorsTmp.size())) {
       outputTensorsTmp[j].copy_(outputFlattened[j], true);
     }
@@ -723,6 +735,7 @@ c10::intrusive_ptr<Work> flagcxBackend::reduce_scatter(
     const ReduceScatterOptions &opts) {
   auto outputTensor = outputTensors.back();
   auto inputTensorsTmp = inputTensors.back();
+  auto device = outputTensor.device();
   auto flagcxDataType = getFlagcxDataType(outputTensor.scalar_type());
   auto flagcxReduceOp =
       getFlagcxReduceOp(opts.reduceOp, outputTensor, flagcxDataType);
@@ -730,8 +743,8 @@ c10::intrusive_ptr<Work> flagcxBackend::reduce_scatter(
   auto work = c10::make_intrusive<flagcxWork>(OpType::REDUCE_SCATTER, stream,
                                               handler_->devHandle);
   check_device(outputTensor.device(), inputTensorsTmp[0].device());
-  initComm(outputTensor.device());
-  syncStream(outputTensor.device());
+  initComm(device);
+  syncStream(device);
 
   if (!check_same_size(inputTensorsTmp)) {
     throw std::runtime_error(
@@ -741,8 +754,11 @@ c10::intrusive_ptr<Work> flagcxBackend::reduce_scatter(
     at::Tensor inputFlattened = newLikeFlat(inputTensorsTmp);
 
     // Copy the input tensors to the flattened tensor.
-    for (const auto j : c10::irange(inputTensorsTmp.size())) {
-      inputFlattened[j].copy_(inputTensorsTmp[j], true);
+    {
+      flagcxStreamGuard guard(stream, device.index());
+      for (const auto j : c10::irange(inputTensorsTmp.size())) {
+        inputFlattened[j].copy_(inputTensorsTmp[j], true);
+      }
     }
 
     // Perform the reducescatter operation
@@ -829,12 +845,13 @@ flagcxBackend::scatter(std::vector<at::Tensor> &outputTensors,
                        std::vector<std::vector<at::Tensor>> &inputTensors,
                        const ScatterOptions &opts) {
   auto &outputTensor = outputTensors.back();
+  auto device = outputTensor.device();
   auto flagcxDataType = getFlagcxDataType(outputTensor.scalar_type());
   auto stream = getStreamByIndex(0);
   auto work = c10::make_intrusive<flagcxWork>(OpType::SCATTER, stream,
                                               handler_->devHandle);
-  initComm(outputTensor.device());
-  syncStream(outputTensor.device());
+  initComm(device);
+  syncStream(device);
 
   auto root = opts.rootRank;
   std::vector<at::Tensor> inputTensorsTmp;
@@ -851,6 +868,7 @@ flagcxBackend::scatter(std::vector<at::Tensor> &outputTensors,
 
   // Copy the input tensors to the flattened tensor.
   if (rank_ == root) {
+    flagcxStreamGuard guard(stream, device.index());
     for (const auto j : c10::irange(inputTensorsTmp.size())) {
       inputFlattened[j].copy_(inputTensorsTmp[j], true);
     }
