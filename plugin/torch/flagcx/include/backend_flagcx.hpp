@@ -40,11 +40,13 @@ public:
 #elif USE_CAMBRICON_ADAPTOR
     event_ = std::make_unique<flagcxMluEvent>();
 #endif
+stashed_for_allocator_safety_ = std::make_shared<std::vector<at::Tensor>>();
   }
   bool isCompleted() override;
   bool isSuccess() const override;
   bool wait(std::chrono::milliseconds timeout = kUnsetTimeout) override;
   c10::intrusive_ptr<c10::ivalue::Future> getFuture() override;
+
 
 private:
   flagcxStream_t stream_;
@@ -54,6 +56,21 @@ private:
   bool coalesced_; // for group semantics, unused for now
   bool isBarrierOp_;
   std::unique_ptr<flagcxEvent> event_;
+
+  // Stash tensors so that CachingAllocator cannot recycle them prematurely.
+  // Used in case of async ops.
+  void stashTensors(std::vector<at::Tensor>& tensors);
+
+  // Unstage the stashed tensors so that CachingAllocator can recycle them
+  void unstashTensors();
+  std::shared_ptr<std::vector<at::Tensor>> stashed_for_allocator_safety_;
+    // Need a mutex to protect stashed_for_allocator_safety_ because it can be
+  // accessed from both main thread and watchdog thread.
+  std::mutex stashMutex_;
+
+  // Store a reference to NCCL collective's outputs, used by result and to
+  // give a more descriptive message when representing the Work as a string.
+  std::shared_ptr<std::vector<at::Tensor>> outputs_;
 };
 
 class flagcxBackend : public Backend {

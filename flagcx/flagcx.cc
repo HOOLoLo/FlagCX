@@ -7,6 +7,7 @@
 #include "comm.h"
 #include "flagcx_hetero.h"
 #include "param.h"
+#include <iostream>
 
 #include <cassert>
 #include <stdio.h>
@@ -1163,9 +1164,11 @@ flagcxResult_t flagcxReduceScatter(const void *sendbuff, void *recvbuff,
                                    flagcxStream_t stream) {
   FLAGCXCHECK(flagcxEnsureCommReady(comm));
   if (is_homo_comm(comm)) {
+    //std::cout << "homo comm !!!!!" << std::endl;
     return cclAdaptors[flagcxCCLAdaptorDevice]->reduceScatter(
         sendbuff, recvbuff, recvcount, datatype, op, comm->homo_comm, stream);
   } else {
+    //std::cout << "hetero comm !!!!!" << std::endl;
     char *useBootstrap = getenv("USE_BOOTSTRAP_CCL");
     if (useBootstrap) {
       return wrapperReduceScatterBootstrap(sendbuff, recvbuff, recvcount,

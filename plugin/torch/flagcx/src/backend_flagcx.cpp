@@ -154,7 +154,20 @@ bool flagcxWork::wait(std::chrono::milliseconds /* unused */) {
   if (isBarrierOp_) {
     C10D_FLAGCX_CHECK(handler_->streamSynchronize(stream_), std::nullopt);
   }
+  unstashTensors();
   return true;
+}
+
+void flagcxWork::stashTensors(
+      std::vector<at::Tensor>& tensors) {
+  std::lock_guard<std::mutex> lock(stashMutex_);
+  stashed_for_allocator_safety_->insert(
+      stashed_for_allocator_safety_->end(), tensors.begin(), tensors.end());
+}
+
+void flagcxWork::unstashTensors() {
+  std::lock_guard<std::mutex> lock(stashMutex_);
+  stashed_for_allocator_safety_->clear();
 }
 
 c10::intrusive_ptr<c10::ivalue::Future> flagcxWork::getFuture() {
@@ -333,7 +346,7 @@ flagcxBackend::collectiveCoalesced(std::vector<at::Tensor> &inputs,
   syncStream(device);
   auto work = c10::make_intrusive<flagcxWork>(opType, getStreamByIndex(0),
                                               handler_->devHandle);
-
+  //std::cout << "in collective coalesced !!!!!!!!!!!!" << std::endl;
   {
     int isHomo;
     flagcxIsHomoComm(handler_->comm, &isHomo);
@@ -396,6 +409,7 @@ flagcxBackend::allgather(std::vector<std::vector<at::Tensor>> &outputTensors,
   initComm(device);
   syncStream(device);
 
+  //handler_->devHandle->deviceSynchronize();
   if (!check_same_size(outputTensorsTmp)) {
     throw std::runtime_error(
         "flagcx only support same size allgather operation");
@@ -410,6 +424,7 @@ flagcxBackend::allgather(std::vector<std::vector<at::Tensor>> &outputTensors,
                                       handler_->comm, stream),
                       std::nullopt);
 
+    handler_->devHandle->deviceSynchronize();
     // Copy the flattened tensor back into a vector of tensors.
     {
       flagcxStreamGuard guard(stream, device.index());
@@ -419,14 +434,23 @@ flagcxBackend::allgather(std::vector<std::vector<at::Tensor>> &outputTensors,
     }
   }
 
-  work->event_->record(stream, deviceId_);
-  work->deviceId_ = deviceId_;
-  work->coalesced_ = false;
+  //work->event_->record(stream, deviceId_);
+  work->event_->record(stream, int(device.index()));
+  work->deviceId_ = int(device.index());
   // Create a future to track the allgather operation
   std::vector<at::Device> devices{inputTensor.device()};
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputTensorsTmp));
+  auto outputs = std::vector<at::Tensor>{outputFlattened};
+  auto inputs = std::vector<at::Tensor>{inputTensor};
+  work->stashTensors(inputs);
+  work->stashTensors(outputs);
+  work->stashTensors(outputTensorsTmp);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
+  // handler_->devHandle->deviceSynchronize();
+  //work->wait();
+  //syncStream(device);
   return work;
 }
 
@@ -442,6 +466,7 @@ flagcxBackend::_allgather_base(at::Tensor &outputTensor,
   initComm(inputTensor.device());
   syncStream(inputTensor.device());
 
+  //handler_->devHandle->deviceSynchronize();
   // Perform the allgather operation
   C10D_FLAGCX_CHECK(flagcxAllGather(inputTensor.data_ptr(),
                                     outputTensor.data_ptr(),
@@ -450,13 +475,15 @@ flagcxBackend::_allgather_base(at::Tensor &outputTensor,
                     std::nullopt);
 
   work->event_->record(stream, deviceId_);
-  work->deviceId_ = deviceId_;
-  work->coalesced_ = false;
+  work->deviceId_ = int(inputTensor.device().index());
   // Create a future to track the allgather operation
   std::vector<at::Device> devices{inputTensor.device()};
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputTensor));
+  //work->wait();
+  //syncStream(inputTensor.device());
+  //handler_->devHandle->deviceSynchronize();
   return work;
 }
 
@@ -745,14 +772,16 @@ c10::intrusive_ptr<Work> flagcxBackend::reduce_scatter(
   check_device(outputTensor.device(), inputTensorsTmp[0].device());
   initComm(device);
   syncStream(device);
-
+at::Tensor inputFlattened;
+  //handler_->devHandle->deviceSynchronize();
   if (!check_same_size(inputTensorsTmp)) {
     throw std::runtime_error(
         "flagcx only support same size reducescatter operation");
   } else {
     // Flatten a vector of tensors into a single, stacked tensor.
-    at::Tensor inputFlattened = newLikeFlat(inputTensorsTmp);
+    inputFlattened = newLikeFlat(inputTensorsTmp);
 
+  //handler_->devHandle->deviceSynchronize();
     // Copy the input tensors to the flattened tensor.
     {
       flagcxStreamGuard guard(stream, device.index());
@@ -769,14 +798,30 @@ c10::intrusive_ptr<Work> flagcxBackend::reduce_scatter(
         std::nullopt);
   }
 
+  if (outputTensor.device().index() != deviceId_){
+    std::cout << "reduce_scatter device id not equal !!!!!!!!!!!!!!!!!" << std::endl;
+    std::cout <<"deviceId_: " << int(deviceId_) << " tensor device: " << int(outputTensor.device().index()) << std::endl;
+  }
+
   work->event_->record(stream, deviceId_);
+  //work->event_->record(stream, int(device.index()));
+  //work->deviceId_ = int(device.index());
   work->deviceId_ = deviceId_;
-  work->coalesced_ = false;
+
   // Create a future to track the reducescatter operation
   std::vector<at::Device> devices{outputTensor.device()};
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputTensor));
+  auto inputs = std::vector<at::Tensor>{inputFlattened};
+  auto outputs = std::vector<at::Tensor>{outputTensor};
+  work->stashTensors(inputs);
+  work->stashTensors(outputs);
+  work->stashTensors(inputTensorsTmp);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
+  //handler_->devHandle->deviceSynchronize();
+  //work->wait();
+  //syncStream(device);
   return work;
 }
 
@@ -793,6 +838,7 @@ flagcxBackend::_reduce_scatter_base(at::Tensor &outputTensor,
   check_device(outputTensor.device(), inputTensor.device());
   initComm(outputTensor.device());
   syncStream(outputTensor.device());
+  //handler_->devHandle->deviceSynchronize();
 
   if (inputTensor.numel() != outputTensor.numel() * size_) {
     throw std::runtime_error(
@@ -805,7 +851,13 @@ flagcxBackend::_reduce_scatter_base(at::Tensor &outputTensor,
                             flagcxReduceOp, handler_->comm, stream),
         std::nullopt);
   }
-
+  //int device_id_ = outputTensor.device().index();
+  //work->event_->record(stream, device_id_);
+  //work->deviceId_ = outputTensor.device().index();
+  if (outputTensor.device().index() != deviceId_){
+    std::cout << "reduce_scatter base device id not equal !!!!!!!!!!!!!!!!!" << std::endl;
+    std::cout <<"deviceId_: " << int(deviceId_) << " tensor device: " << int(outputTensor.device().index()) << std::endl;
+  }
   work->event_->record(stream, deviceId_);
   work->deviceId_ = deviceId_;
   work->coalesced_ = false;
@@ -814,6 +866,14 @@ flagcxBackend::_reduce_scatter_base(at::Tensor &outputTensor,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputTensor));
+  auto inputs = std::vector<at::Tensor>{inputTensor};
+  auto outputs = std::vector<at::Tensor>{outputTensor};
+  work->stashTensors(inputs);
+  work->stashTensors(outputs);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
+  //handler_->devHandle->deviceSynchronize();
+  //work->wait();
+  //syncStream(outputTensor.device());
   return work;
 }
 
@@ -914,6 +974,7 @@ c10::intrusive_ptr<Work> flagcxBackend::send(std::vector<at::Tensor> &tensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(tensors));
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(tensor);
   return work;
 }
 
@@ -940,6 +1001,7 @@ c10::intrusive_ptr<Work> flagcxBackend::recv(std::vector<at::Tensor> &tensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(tensors));
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(tensor);
   return work;
 }
 
