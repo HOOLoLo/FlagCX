@@ -2,6 +2,15 @@
 #include "utils_flagcx.hpp"
 #include <iostream>
 
+#ifdef USE_NVIDIA_ADAPTOR
+#include <c10/cuda/CUDACachingAllocator.h>
+#define recordStream(a, b, c) c10::cuda::CUDACachingAllocator::recordStream(a, at::cuda::getStreamFromExternal(*(cudaStream_t *)b, c));
+#elif USE_CAMBRICON_ADAPTOR
+#include "framework/core/caching_allocator.h"
+#define recordStream(a, b, c) torch_mlu::MLUCachingAllocator::recordStream(a, torch_mlu::getStreamFromExternal(*(cnrtQueue_t *)b, c));
+#endif
+
+
 namespace c10d {
 namespace {
 
@@ -391,6 +400,10 @@ flagcxBackend::collectiveCoalesced(std::vector<at::Tensor> &inputs,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputs[0]));
+  work->stashTensors(inputs);
+  work->stashTensors(outputs);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
+
   return work;
 }
 
@@ -409,13 +422,15 @@ flagcxBackend::allgather(std::vector<std::vector<at::Tensor>> &outputTensors,
   initComm(device);
   syncStream(device);
 
+at::Tensor outputFlattened;
+
   //handler_->devHandle->deviceSynchronize();
   if (!check_same_size(outputTensorsTmp)) {
     throw std::runtime_error(
         "flagcx only support same size allgather operation");
   } else {
     // Flatten a vector of tensors into a single, stacked tensor.
-    at::Tensor outputFlattened = newLikeFlat(outputTensorsTmp);
+    outputFlattened = newLikeFlat(outputTensorsTmp);
 
     // Perform the allgather operation
     C10D_FLAGCX_CHECK(flagcxAllGather(inputTensor.data_ptr(),
@@ -481,6 +496,12 @@ flagcxBackend::_allgather_base(at::Tensor &outputTensor,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputTensor));
+  auto outputs = std::vector<at::Tensor>{outputTensor};
+  auto inputs = std::vector<at::Tensor>{inputTensor};
+  work->stashTensors(inputs);
+  work->stashTensors(outputs);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
+
   //work->wait();
   //syncStream(inputTensor.device());
   //handler_->devHandle->deviceSynchronize();
@@ -532,6 +553,9 @@ flagcxBackend::allreduce(std::vector<at::Tensor> &tensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(tensors));
+ auto inputs = std::vector<at::Tensor>{tensor};
+ work->stashTensors(inputs);
+ work->outputs_ = std::make_shared<std::vector<at::Tensor>>(inputs);
   return work;
 }
 
@@ -616,6 +640,15 @@ flagcxBackend::alltoall(std::vector<at::Tensor> &outputTensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputTensors));
+  //auto outputs = std::vector<at::Tensor>{outputTensor};
+  //auto inputs = std::vector<at::Tensor>{inputTensor};
+  auto outputsFlattened = std::vector<at::Tensor>{outputFlattened};
+  auto inputsFlattened = std::vector<at::Tensor>{inputFlattened};
+  work->stashTensors(inputTensors);
+  work->stashTensors(outputTensors);
+  work->stashTensors(inputsFlattened);
+  work->stashTensors(outputsFlattened);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputTensors);
   return work;
 }
 
@@ -671,6 +704,9 @@ flagcxBackend::broadcast(std::vector<at::Tensor> &tensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(tensors));
+ auto inputs = std::vector<at::Tensor>{tensor};
+ work->stashTensors(inputs);
+ work->outputs_ = std::make_shared<std::vector<at::Tensor>>(inputs);
   return work;
 }
 
@@ -678,6 +714,7 @@ c10::intrusive_ptr<Work>
 flagcxBackend::gather(std::vector<std::vector<at::Tensor>> &outputTensors,
                       std::vector<at::Tensor> &inputTensors,
                       const GatherOptions &opts) {
+  std::cout << "gather !!!!!!!!!!!!!!!" << std::endl;
   auto &inputTensor = inputTensors.back();
   auto device = inputTensor.device();
   auto flagcxDataType = getFlagcxDataType(inputTensor.scalar_type());
@@ -723,11 +760,19 @@ flagcxBackend::gather(std::vector<std::vector<at::Tensor>> &outputTensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputTensorsTmp));
+  
+  auto inputs = std::vector<at::Tensor>{inputTensor};
+  auto outputs = std::vector<at::Tensor>{outputFlattened};
+  work->stashTensors(inputs);
+  work->stashTensors(outputs);
+  work->stashTensors(outputTensorsTmp);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
   return work;
 }
 
 c10::intrusive_ptr<Work> flagcxBackend::reduce(std::vector<at::Tensor> &tensors,
                                                const ReduceOptions &opts) {
+  std::cout << "reduce: !!!!!!!!!!!!!!!!!" << std::endl;
   auto &tensor = tensors.back();
   auto flagcxDataType = getFlagcxDataType(tensor.scalar_type());
   auto flagcxReduceOp =
@@ -858,6 +903,8 @@ flagcxBackend::_reduce_scatter_base(at::Tensor &outputTensor,
     std::cout << "reduce_scatter base device id not equal !!!!!!!!!!!!!!!!!" << std::endl;
     std::cout <<"deviceId_: " << int(deviceId_) << " tensor device: " << int(outputTensor.device().index()) << std::endl;
   }
+  recordStream(inputTensor.storage().data_ptr(), stream, deviceId_);
+  recordStream(outputTensor.storage().data_ptr(), stream, deviceId_);
   work->event_->record(stream, deviceId_);
   work->deviceId_ = deviceId_;
   work->coalesced_ = false;
@@ -871,7 +918,7 @@ flagcxBackend::_reduce_scatter_base(at::Tensor &outputTensor,
   work->stashTensors(inputs);
   work->stashTensors(outputs);
   work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
-  //handler_->devHandle->deviceSynchronize();
+  handler_->devHandle->deviceSynchronize();
   //work->wait();
   //syncStream(outputTensor.device());
   return work;
@@ -910,6 +957,7 @@ flagcxBackend::scatter(std::vector<at::Tensor> &outputTensors,
   auto stream = getStreamByIndex(0);
   auto work = c10::make_intrusive<flagcxWork>(OpType::SCATTER, stream,
                                               handler_->devHandle);
+  std::cout << "scatter: !!!!!!!!!!!!!!!!!" << std::endl;
   initComm(device);
   syncStream(device);
 
@@ -948,6 +996,13 @@ flagcxBackend::scatter(std::vector<at::Tensor> &outputTensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(outputTensor));
+
+  auto inputs = std::vector<at::Tensor>{inputFlattened};
+  auto outputs = std::vector<at::Tensor>{outputTensor};
+  work->stashTensors(inputs);
+  work->stashTensors(outputs);
+  work->stashTensors(inputTensorsTmp);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
   return work;
 }
 
@@ -974,7 +1029,9 @@ c10::intrusive_ptr<Work> flagcxBackend::send(std::vector<at::Tensor> &tensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(tensors));
-  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(tensor);
+
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>();
+  work->outputs_->push_back(tensor);
   return work;
 }
 
@@ -1001,7 +1058,8 @@ c10::intrusive_ptr<Work> flagcxBackend::recv(std::vector<at::Tensor> &tensors,
   work->future_ = c10::make_intrusive<c10::ivalue::Future>(
       c10::ListType::create(c10::TensorType::get()), devices);
   work->future_->markCompleted(c10::IValue(tensors));
-  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(tensor);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>();
+  work->outputs_->push_back(tensor);
   return work;
 }
 
