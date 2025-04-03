@@ -16,6 +16,10 @@ struct flagcxStream {
     cudaStream_t base;
 };
 
+struct flagcxEvent {
+  cudaEvent_t base;
+};
+
 #define DEVCHECK(func) {                                         \
    int ret = func;                                               \
    if(ret != cudaSuccess) return flagcxUnhandledDeviceError;     \

@@ -136,6 +136,11 @@ struct flagcxDeviceAdaptor {
   flagcxResult_t (*streamSynchronize)(flagcxStream_t stream);
   flagcxResult_t (*streamQuery)(flagcxStream_t stream);
 
+  // Event function
+  flagcxResult_t (*placeEvent)(flagcxStream_t stream, flagcxEvent_t event);
+  flagcxResult_t (*createEvent)(flagcxEvent_t *event);
+  flagcxResult_t (*waitEvent)(flagcxStream_t stream, flagcxEvent_t event);
+
   // Kernel launch
   // TODO: verify if we do need these funcs, if so, figure out a way to
   // eliminate overly fine-grained arguments such as block_xxx, grid_xxx, etc.

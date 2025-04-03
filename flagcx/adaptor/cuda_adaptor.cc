@@ -214,6 +214,24 @@ flagcxResult_t cudaAdaptorGetDeviceByPciBusId(int *dev, const char *pciBusId) {
   return flagcxSuccess;
 }
 
+flagcxResult_t cudaAdaptorPlaceEvent(flagcxStream_t stream, flagcxEvent_t event){
+  DEVCHECK(cudaEventRecord(event->base, stream->base));
+  return flagcxSuccess;
+}
+
+flagcxResult_t cudaAdaptorCreateEvent(flagcxEvent_t *event){
+  (*event) = NULL;
+  flagcxCalloc(event, 1);
+  DEVCHECK(cudaEventCreate((cudaEvent_t *)(*event)));
+  return flagcxSuccess;
+}
+
+flagcxResult_t cudaAdaptorWaitEvent(flagcxStream_t stream, flagcxEvent_t event){
+ // TODO:  check if need set steams device
+  DEVCHECK(cudaStreamWaitEvent(stream->base, event->base, 0));
+  return flagcxSuccess;
+}
+
 struct flagcxDeviceAdaptor cudaAdaptor {
   "CUDA",
       // Basic functions
@@ -232,6 +250,12 @@ struct flagcxDeviceAdaptor cudaAdaptor {
       cudaAdaptorStreamCreate, cudaAdaptorStreamDestroy, cudaAdaptorStreamCopy,
       cudaAdaptorStreamFree, cudaAdaptorStreamSynchronize,
       cudaAdaptorStreamQuery,
+
+      // stream functions
+cudaAdaptorPlaceEvent,
+cudaAdaptorCreateEvent,
+cudaAdaptorWaitEvent,
+
       // Kernel launch
       NULL, // flagcxResult_t (*launchKernel)(void *func, unsigned int block_x,
             // unsigned int block_y, unsigned int block_z, unsigned int grid_x,

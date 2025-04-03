@@ -151,6 +151,10 @@ inline void* flagcxProxyProgress(void *proxyState_){
               commplete = false;
               struct flagcxProxyOp* op = flagcxIntruQueueHead(queue);
               struct sendNetResources *resources = (sendNetResources *)op->connection->transportResources;
+              flagcxEvent_t event;
+              deviceAdaptor->createEvent(&event);
+              deviceAdaptor->placeEvent(op->stream, event);
+              deviceAdaptor->waitEvent(resources->cpStream, event);
               flagcxProxySend(resources, op->recvbuff, op->nbytes, &op->args);
               if(op->args.done) {
                 flagcxIntruQueueDelete(queue, op);

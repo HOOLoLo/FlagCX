@@ -78,6 +78,8 @@ typedef flagcxUniqueId *flagcxUniqueId_t;
 typedef struct flagcxComm *flagcxComm_t;
 /* Opaque handle to flagcxStream */
 typedef struct flagcxStream *flagcxStream_t;
+/* Opaque handle to flagcxEvent */
+typedef struct flagcxEvent *flagcxEvent_t;
 
 struct flagcxDeviceHandle {
   // Basic functions

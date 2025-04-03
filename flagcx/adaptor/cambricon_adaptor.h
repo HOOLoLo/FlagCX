@@ -17,6 +17,10 @@ struct flagcxStream {
     cnrtQueue_t base;
 };
 
+struct flagcxEvent {
+  cnrtNotifier_t base;
+};
+
 #define DEVCHECK(func) {                                         \
    int ret = func;                                               \
    if(ret != cnrtSuccess) return flagcxUnhandledDeviceError;     \

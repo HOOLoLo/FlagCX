@@ -193,6 +193,25 @@ flagcxResult_t mluAdaptorGetDeviceByPciBusId(int *dev, const char *pciBusId) {
   DEVCHECK(cnrtDeviceGetByPCIBusId(dev, pciBusId));
   return flagcxSuccess;
 }
+
+flagcxResult_t mluAdaptorPlaceEvent(flagcxStream_t stream, flagcxEvent_t event){
+  DEVCHECK(cnrtPlaceNotifier(event->base, stream->base));
+  return flagcxSuccess;
+}
+
+flagcxResult_t mluAdaptorCreateEvent(flagcxEvent_t *event){
+  (*event) = NULL;
+  flagcxCalloc(event, 1);
+  DEVCHECK(cnrtNotifierCreate((cnrtNotifier_t *)(*event)));
+  return flagcxSuccess;
+}
+
+flagcxResult_t mluAdaptorWaitEvent(flagcxStream_t stream, flagcxEvent_t event){
+ // TODO:  check if need set steams device
+  DEVCHECK(cnrtQueueWaitNotifier(event->base, stream->base, 0));
+  return flagcxSuccess;
+}
+
 struct flagcxDeviceAdaptor mluAdaptor {
   "MLU",
       // Basic functions
@@ -210,6 +229,12 @@ struct flagcxDeviceAdaptor mluAdaptor {
       // Stream functions
       mluAdaptorStreamCreate, mluAdaptorStreamDestroy, mluAdaptorStreamCopy,
       mluAdaptorStreamFree, mluAdaptorStreamSynchronize, mluAdaptorStreamQuery,
+
+      //Event functions
+      mluAdaptorPlaceEvent,
+      mluAdaptorCreateEvent,
+      mluAdaptorWaitEvent,
+
       // Kernel launch
       NULL, // flagcxResult_t (*launchKernel)(void *func, unsigned int block_x,
             // unsigned int block_y, unsigned int block_z, unsigned int grid_x,
